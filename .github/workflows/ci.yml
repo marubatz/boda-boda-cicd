@@ -24,6 +24,13 @@ jobs:
         run: node tests/api.test.js
       - name: Build Docker image
         run: docker build -t boda-boda:${{ github.sha }} .
+      - name: Save Docker image as tar
+        run: docker save boda-boda:${{ github.sha }} -o boda-image.tar
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: boda-image
+          path: boda-image.tar
 
   deploy-staging:
     needs: build-and-test
@@ -31,6 +38,12 @@ jobs:
     environment:
       name: staging
     steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: boda-image
+      - name: Load Docker image
+        run: docker load -i boda-image.tar
       - name: Deploy to staging
         run: |
           docker run -d -p 4001:4000 --name boda-staging boda-boda:${{ github.sha }}
@@ -51,6 +64,12 @@ jobs:
     needs: approval
     runs-on: ubuntu-latest
     steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: boda-image
+      - name: Load Docker image
+        run: docker load -i boda-image.tar
       - name: Deploy to production
         run: |
           docker stop boda-production || true
