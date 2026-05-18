@@ -1,37 +1,61 @@
-name: CI Pipeline
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
     branches: [ main, master ]
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
-
       - name: Install dependencies
-        run: |
-          cd app
-          npm ci
-
+        run: cd app && npm ci
       - name: Start server in background
         run: |
           cd app
           node index.js &
           sleep 5
-
       - name: Run API test
         run: node tests/api.test.js
-
       - name: Build Docker image
-        run: docker build -t boda-boda:ci .
+        run: docker build -t boda-boda:${{ github.sha }} .
+
+  deploy-staging:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+    steps:
+      - name: Deploy to staging
+        run: |
+          docker run -d -p 4001:4000 --name boda-staging boda-boda:${{ github.sha }}
+          sleep 5
+          curl --fail http://localhost:4001/api/status || exit 1
+          echo "✅ Staging deployment successful"
+
+  approval:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Wait for manual approval
+        run: echo "Approval step - waiting for release manager"
+
+  deploy-production:
+    needs: approval
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to production
+        run: |
+          docker stop boda-production || true
+          docker rm boda-production || true
+          docker run -d -p 4000:4000 --name boda-production boda-boda:${{ github.sha }}
+          sleep 5
+          curl --fail http://localhost:4000/api/status || exit 1
+          echo "✅ Production deployment successful"
