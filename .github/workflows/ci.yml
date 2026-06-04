@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+ name: CI/CD Pipeline
 
 on:
   push:
@@ -24,29 +24,37 @@ jobs:
         run: node tests/api.test.js
       - name: Build Docker image
         run: docker build -t boda-boda:${{ github.sha }} .
-      - name: Save Docker image as tar
-        run: docker save boda-boda:${{ github.sha }} -o boda-image.tar
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v4
+
+  push-to-dockerhub:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
         with:
-          name: boda-image
-          path: boda-image.tar
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ vars.DOCKER_USERNAME }}/boda-boda-backend:latest
+            ${{ vars.DOCKER_USERNAME }}/boda-boda-backend:${{ github.sha }}
 
   deploy-staging:
-    needs: build-and-test
+    needs: push-to-dockerhub
     runs-on: ubuntu-latest
     environment:
       name: staging
     steps:
-      - name: Download image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: boda-image
-      - name: Load Docker image
-        run: docker load -i boda-image.tar
+      - name: Pull image from Docker Hub
+        run: docker pull ${{ vars.DOCKER_USERNAME }}/boda-boda-backend:latest
       - name: Deploy to staging
         run: |
-          docker run -d -p 4001:4000 --name boda-staging boda-boda:${{ github.sha }}
+          docker run -d -p 4001:4000 --name boda-staging ${{ vars.DOCKER_USERNAME }}/boda-boda-backend:latest
           sleep 5
           curl --fail http://localhost:4001/api/status || exit 1
           echo "✅ Staging deployment successful"
@@ -64,17 +72,13 @@ jobs:
     needs: approval
     runs-on: ubuntu-latest
     steps:
-      - name: Download image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: boda-image
-      - name: Load Docker image
-        run: docker load -i boda-image.tar
+      - name: Pull image from Docker Hub
+        run: docker pull ${{ vars.DOCKER_USERNAME }}/boda-boda-backend:latest
       - name: Deploy to production
         run: |
           docker stop boda-production || true
           docker rm boda-production || true
-          docker run -d -p 4000:4000 --name boda-production boda-boda:${{ github.sha }}
+          docker run -d -p 4000:4000 --name boda-production ${{ vars.DOCKER_USERNAME }}/boda-boda-backend:latest
           sleep 5
           curl --fail http://localhost:4000/api/status || exit 1
           echo "✅ Production deployment successful"
