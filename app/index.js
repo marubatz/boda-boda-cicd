@@ -37,6 +37,21 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// -------------------- ROOT ENDPOINT (FIX "Cannot GET /") --------------------
+app.get('/', (req, res) => {
+  res.json({
+    message: '🚀 Bodaboda API is running!',
+    endpoints: {
+      health: '/api/status',
+      trips: '/api/trips',
+      riders: '/api/riders',
+      locations: '/api/locations',
+      metrics: '/metrics'
+    }
+  });
+});
+// ----------------------------------------------------------------------------
+
 const locationCoordinates = {
   "Dodoma CBD": [-6.1722, 35.7395],
   "Jakaya Kikwete Road": [-6.1800, 35.7400],
