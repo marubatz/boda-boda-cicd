@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: bodaboda
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  mqtt:
+    image: eclipse-mosquitto:latest
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    # If you have a config volume, add it here; otherwise it's fine.
+
+  app:
+    build: .
+    ports:
+      - "4000:4000"
+    depends_on:
+      - postgres
+      - mqtt
+    environment:
+      DB_HOST: postgres
+      DB_USER: postgres
+      DB_PASSWORD: secret
+      DB_NAME: bodaboda
+
+volumes:
+  postgres_data:

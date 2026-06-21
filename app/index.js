@@ -2,9 +2,34 @@ import express from "express";
 import cors from "cors";
 import crypto from "crypto";
 import pool from "./db.js";
+import client from 'prom-client';
+import mqtt from 'mqtt';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+
+// -------------------- MQTT BROKER CONNECTION --------------------
+const mqttClient = mqtt.connect('mqtt://mqtt:1883');
+
+mqttClient.on('connect', () => {
+  console.log('✅ Connected to MQTT broker');
+});
+
+mqttClient.on('error', (err) => {
+  console.error('❌ MQTT connection error:', err.message);
+});
+// ---------------------------------------------------------------
+
+// -------------------- PROMETHEUS METRICS --------------------
+const register = new client.Registry();
+client.collectDefaultMetrics({ register });
+
+// Expose metrics endpoint for Prometheus to scrape
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
+});
+// ------------------------------------------------------------
 
 app.use(cors({
   origin: true,
@@ -145,6 +170,22 @@ app.post("/api/trips", async (req, res) => {
   );
 
   const createdTrip = rows[0];
+  
+  // 📢 PUBLISH MQTT MESSAGE FOR REAL-TIME RIDE REQUEST
+  const rideRequestMessage = {
+    tripId: createdTrip.id,
+    customer: customer || "Customer",
+    phone: phone || "N/A",
+    pickup: pickup || "Dodoma CBD",
+    dropoff: dropoff || "Dodoma CBD",
+    fare: typeof fare === "number" ? fare : 0,
+    payment: payment || "Cash",
+    timestamp: new Date().toISOString()
+  };
+  
+  mqttClient.publish('ride/request', JSON.stringify(rideRequestMessage));
+  console.log(`📢 Published ride request to MQTT: Trip ${createdTrip.id}`);
+
   res.status(201).json(formatTrip({ ...createdTrip, rider_name: nearestRider?.name || null }));
 });
 
@@ -219,7 +260,7 @@ app.post("/api/user/register", async (req, res) => {
         name || "Guest User",
         email,
         phone || "N/A",
-        password, // In production, hash this password
+        password,
         defaultLocation || "Dodoma CBD",
         Array.isArray(paymentMethods) ? paymentMethods : [],
         provider || "local",
@@ -227,7 +268,7 @@ app.post("/api/user/register", async (req, res) => {
     );
     res.status(201).json(rows[0]);
   } catch (error) {
-    if (error.code === '23505') { // Unique constraint violation
+    if (error.code === '23505') {
       res.status(409).json({ error: 'Email already exists' });
     } else {
       console.error('Registration error:', error);
@@ -276,9 +317,8 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // Generate session token
     const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     await pool.query(
       'INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, $3)',

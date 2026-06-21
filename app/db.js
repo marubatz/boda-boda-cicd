@@ -1,15 +1,12 @@
-import { config } from "dotenv";
-import pg from "pg";
-
-config();
-
-const { Pool } = pg;
-const connectionString = process.env.DATABASE_URL || "postgresql://localhost:5432/bodaboda";
+import pkg from 'pg';
+const { Pool } = pkg;
 
 const pool = new Pool({
-  connectionString,
-  max: 10,
-  idleTimeoutMillis: 30000,
+  host: process.env.DB_HOST || 'postgres',
+  port: process.env.DB_PORT || 5432,
+  user: process.env.DB_USER || 'postgres',
+  password: process.env.DB_PASSWORD || 'secret',
+  database: process.env.DB_NAME || 'bodaboda',
 });
 
 export default pool;
